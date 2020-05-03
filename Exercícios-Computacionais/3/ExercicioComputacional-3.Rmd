@@ -1,0 +1,329 @@
+# ===============================================================================================
+# Curso: Introdução à Ciência de Dados e Decisões 
+
+
+# Aula  - Modelos de Regressão Logística
+
+# Professor - Ricardo Augusto
+
+
+# =========================
+# Exercicio Computacional 3
+
+# Objetivo: implementar modelos de regressão logística no R
+
+
+# Colocando o caminho do diretório
+caminho = ''
+setwd(caminho)
+getwd()
+list.files()
+
+
+# Instalando os pacotes para realizarmos a regressão logística
+# install.packages("caret")
+# install.packages("ROCR")
+# install.packages("e1071")
+
+# Carregando os pacotes
+library(caret)
+library(ROCR)
+library(e1071)
+
+# Problema de Negócio relacionado com a regressão logística (classificação): previsão de crédito para clientes
+
+# É importante fazer uma discussão inicial sobre o treinamento de um classificador para esse objetivo:
+# i)   os projetos de ciência de dados podem, na prática, construir e usar vários classificadores
+# ii)  o modelo de regressão logística é uma função hipótese candidata apropriada para essa tarefa (classificação) 
+# iii) o banco ou instituição financeira precisa de dados confiáveis a respeito de seus clientes
+# iv)  se eu sou um cliente novo? o banco não possui histórico de operações/informações financeiras a meu respeito..como se dá essa predição?
+# v)   reparem que o modelo foi treinado com os dados históricos que o banco possui sobre seus clientes
+
+
+# Fazendo o carregamento do dataset com os dados 
+dataset_credito <- read.csv("credit_dataset.csv", header = TRUE, sep = ',')
+head(dataset_credito)
+summary(dataset_credito)
+str(dataset_credito)
+View(dataset_credito)
+
+
+# Primeiro ponto de pré-processamento: converter as variáveis em categorias (fatores no R)
+
+# Criação de uma função no R para conversão de variáveis em fatores (as.factor)
+factor_conversion <- function(df , variaveis){
+  # Loop para todas as variáveis
+  for (variavel in variaveis){
+  # Conversão para fator
+  df[[variavel]] <- as.factor(df[[variavel]])
+  }
+  return(df)
+}
+
+
+# Segundo ponto de pré-procesamento: normalização dos dados (feature scaling)
+
+# Criação de uma função no R para a normalização dos dados
+# Repare: uso da função scale (pacote base) para normalização 
+normalizar_features <- function(df, variables){
+  for (variable in variables){
+    df[[variable]] <- scale(df[[variable]], center = T, scale = T)
+  }
+  return(df)
+}
+
+
+# Aplicando o procedimento de normalização das variáveis
+
+# Lista de nomes das variáveis numéricas para normalização
+numeric_vars <- c("credit.duration.months", "age", "credit.amount")
+
+# Aplicação da normalização das variáveis a partir se duas identificações
+dataset_credito_normalizado <- normalizar_features(dataset_credito, numeric_vars)
+
+# Visualizações dos datasets - com variávies numéricas normalizadas
+View(dataset_credito)
+View(dataset_credito_normalizado)
+
+
+
+# Lista de nomes variáveis categóricas - iremos transformá-las para tipo fator
+categorical_vars <- c('credit.rating', 'account.balance', 'previous.credit.payment.status',
+                      'credit.purpose', 'savings', 'employment.duration', 'installment.rate',
+                      'marital.status', 'guarantor', 'residence.duration', 'current.assets',
+                      'other.credits', 'apartment.type', 'bank.credits', 'occupation', 
+                      'dependents', 'telephone', 'foreign.worker')
+
+# Aplicação da conversã para fator a partir se duas identificações
+dataset_credito_normalizado_factor <- factor_conversion(dataset_credito_normalizado, categorical_vars)
+
+# Visualizações dos datasets - com variávies numéricas normalizadas e variáveis categóricas transformadas para factor
+str(dataset_credito_normalizado_factor)
+View(dataset_credito_normalizado_factor)
+
+# ----------------------------------------------------------------------
+# Preparação dos dados de treinamento e teste
+
+# Vamos usar a função sample, do pacote base do R, para extrair uma porcentagem (%) de dados do conjunto dataset 
+# para a fase de treinamento, permitindo que o restante de dados seja usado para teste.
+
+# Para reprodução dos resultados
+set.seed(90)
+
+# Vamos gerar o vetor de índices com posições aleatórias que capturam 60% dos dados para treinamento
+index_training = sample(1:nrow(dataset_credito_normalizado_factor), size = 0.6*nrow(dataset_credito_normalizado_factor))
+
+# Dicas:
+# 1) a função nrow nos fornece o número de linhas do dataset (row)
+# 2) o parâmetro size nos permite especificar o tamanho da amostra capturada para treino do modelo
+# 3) a variável index_training é um vetor com posições ou índices que nos permitem capturar dados específicos do dataset para treinamento
+
+# Com o vetor de índices de treinamento criado - podemos obter os conjuntos de treino e teste
+training_data = dataset_credito_normalizado_factor[index_training,]
+test_data     = dataset_credito_normalizado_factor[-index_training,]
+
+# Dicas:
+# 1) repare na notação do R para acessarmos o dataset por meio de índices
+# 2) quando usamos a sintaxe [index,] -> quer dizer que queremos as linhas apontadas pelo índice de todas as colunas
+# 3) quando usamos a sintaxe [-index,] -> o sinal de negativo - quer dizer que queremos as linhas que não são apontadas pelo índice de todas as colunas
+# 4) essa extração por meio de [] é denotada como slicing de dataframes
+
+# Visulização dos conjuntos de treinamento e teste
+View(training_data)
+View(test_data)
+
+# Repare também que os conjuntos de treinamento e teste são dataframes
+class(training_data)
+class(test_data)
+
+# Veja que o objetivo do modelo de regressão logística é fazer classificações sobre crédito 
+# Ressaltando -> a variável target - de saída é a credit.rating vamos separá-la no conjunto de teste
+test_features <- test_data[,-1]
+test_target   <- test_data[,1]
+
+# Verificação das classes das variáveis explanatórias e a variável de saída
+class(test_features)
+class(test_target)
+
+# =======================================================================================================
+# Construção do Modelo Preditivo com Regressão Logística  
+
+# Vamos criar o objeto referente à equação de relação de variáveis do modelo
+equation <- "credit.rating ~ ."
+class(equation)
+equation <- as.formula(equation)
+class(equation)
+
+# Dicas:
+# 1) estamos criando uma fórmula no R 
+# 2) do lado esquerdo do ~ colocamos a variável target ou resposta
+# 3) do lado direito do ~ colocamos as variáveis explanatórias
+# 4) quando usamos o . -> estamos apontando o uso de todas as variáveis explanatórias
+
+# Função usada para construção do modelo preditivo de regressão logística
+# Fitting Generalized Linear Models
+# ?glm
+modelo_ML_logistic_1 <- glm(equation, data = training_data, family = "binomial")
+modelo_ML_logistic_1
+
+
+# Síntese das informações do modelo
+summary(modelo_ML_logistic_1)
+
+# Dicas:
+# 1) observem os resultados do summary com atenção para verificar quais são as variáveis explanatórias mais (estatísticamente) significativas para o modelo de ML 
+# 2) perceba agora que esse modelo está fazendo uma classificação, considerando duas classes de saída (aprovação ou desaprovação) de crédito
+# 3) dbservem que também existem estatísticas relacionadas com os resíduos do modelo treinado
+# 4) observem a estatística z e seu p-value -> recordando do tópico sobre testes de hipóteses que vimos na aula de revisão 
+# 5) o parâmetro binomial para a família da regressão logística é usado pois a classe de saída só pode assumir dois valores (1 ou 0)
+# 6) a função glm pode ser usada para criar diferentes modelos - e o parâmetro family é o que permite diferenciar os modelos
+
+
+# -------------------------------------------------------------------------------------------------------------------------
+# Fazendo as predições a partir do modelo treinado
+
+# View(test_data)
+previsao_teste <- predict(modelo_ML_logistic_1, test_data, type = 'response')
+previsao_teste
+# View(previsao_teste)
+
+# Repare que a função predict nos fornece a previsão de cada classe expressa por probabilidades
+# Nesse caso, podemos usar a função round para fazer o arredondamento para as classes desejadas (0 e 1) nesse caso binomial
+previsao_teste <- round(previsao_teste)
+# View(previsao_teste)
+# View(test_target)
+
+previsao_teste_data <- data.frame(previsao_teste, test_target)
+colnames(previsao_teste_data) <- c('Previsão','Target')
+# View(previsao_teste_data)
+
+# -----------------------------------------------------------------------------------------------------------------------
+# Implementação da Matriz de Confusão
+
+# Construção da matriz de confusão a partir dos dados de teste e as previsões realizadas pelo modelo de ML
+cm_modelo_1 <- confusionMatrix(table(data = previsao_teste, reference = test_target), positive = "1")
+cm_modelo_1
+
+# Dicas:
+# 1) Observe na referência de ajuste - as definições e interpretações da síntese estatística fornecida junto com a matriz de confusão
+# 2) Compare com os slides que vimos na primeira aula (conceitos de ML) no momento em que abordamos as métricas de performance dos modelos de ML
+# 3) Boa referência para compreeender a matriz de confusão e o package caret: Kuhn, M. (2008), “Building predictive models in R using the caret package
+# 4) A acurácia calculada é uma das principais métricas e serem utilizadas na avaliação de desempenho dos classificadores
+
+# ========================================================================================================================
+# Seleção de Variáveis Explanatórias (Feature Selection) para Modelagem
+
+equation <- "credit.rating ~ ."
+equation <- as.formula(equation)
+
+# Uso da função trainControl - trata-se de uma função do pacote caret para que possamos aplicar um procedimento de 
+# controle sobre diversos treinamentos. Repare que usamos o método de repetição de validação cruzada
+controle_procedimento      <- trainControl(method = "repeatedcv", number = 10, repeats = 2)
+modelo_ML_controle_traning <- train(equation, data = training_data, method = 'glm', trControl = controle_procedimento)
+
+# Após as diversas iterações de treinamento do modelo, vamos usar a função varImp, também do pacote caret, que irá 
+# nos permite verifica quais são as variáveis explanatórias mais importantes 
+feature_selection = varImp(modelo_ML_controle_traning, scale = TRUE)
+# Visualização das variáveis explanatórias mais relevantes
+plot(feature_selection)
+
+
+
+# ========================================================================================================
+# --------------------------------------------------------------------------------------------------------
+# Avaliando a performance do modelo logistio com todas as variáveis explanatórias - Modelo 1
+
+# Modelo de regressão logística 1
+
+# Previsões do modelo de regressão logística 1
+previsao_teste_modelo_1 <- predict(modelo_ML_logistic_1, test_data, type = 'response')
+# previsao_teste_modelo_1 <- round(previsao_teste_modelo_1)
+
+# Dataframe - previsão do modelo 1
+# dataframe_previsao_modelo_1 <- data.frame(previsao_teste_modelo_1, test_target)
+# colnames(dataframe_previsao_modelo_1) <- c('Previsão Nova','Target')
+# View(dataframe_previsao_modelo_1)
+
+# Repare na diferença entre a função predict e a função prediction
+previsoes_finais_modelo_1 <- prediction(previsao_teste_modelo_1, test_target)
+
+# Função que podemos usar para plot da curva ROC 
+plot.roc.curve <- function(predictions, title.text){
+  perf <- performance(predictions, "tpr", "fpr")
+  plot(perf,col = "black",lty = 1, lwd = 2,
+       main = title.text, cex.main = 0.6, cex.lab = 0.8,xaxs = "i", yaxs = "i")
+  abline(0,1, col = "red")
+  auc <- performance(predictions,"auc")
+  auc <- unlist(slot(auc, "y.values"))
+  auc <- round(auc,2)
+  legend(0.4,0.4,legend = c(paste0("AUC: ",auc)), cex = 0.6, bty = "n", box.col = "white")
+}
+
+# Plot - quantidade de gráficos na paleta gráfica do R
+par(mfrow = c(1, 2))
+plot.roc.curve(previsoes_finais_modelo_1, title.text = "Curva ROC (Modelo 1)")
+
+
+# ========================================================================================================================
+# A partir da análise das variáveis explanatórias mais importantes para o modelo, vamos fazer a modelagem de um novo classificador
+
+# Formulação da equação com as variáveis explanatórias selecionadas para o modelo
+equation_nova <- "credit.rating ~ account.balance + credit.purpose + previous.credit.payment.status + savings + credit.duration.months"
+equation_nova <- as.formula(equation_nova)
+
+# Função usada para construção do modelo preditivo de regressão logística
+modelo_ML_logistic_2 <- glm(equation_nova, data = training_data, family = "binomial")
+modelo_ML_logistic_2
+
+# Síntese das informações do modelo
+summary(modelo_ML_logistic_2)
+
+# Fazendo previsões com o novo modelo treinado
+# Repare que a função predict nos fornece a previsão de cada classe expressa por probabilidades
+# Nesse caso, podemos usar a função round para fazer o arredondamento para as classes desejadas (0 e 1) nesse caso binomial
+previsao_teste_2 <- predict(modelo_ML_logistic_2, test_data, type = 'response')
+previsao_teste_2 <- round(previsao_teste_2)
+
+previsao_teste_2_data <- data.frame(previsao_teste_2, test_target)
+colnames(previsao_teste_2_data) <- c('Previsão Nova','Target')
+# View(previsao_teste_novo_data)
+
+# -----------------------------------------------------------------------------------------------------------------------
+# Implementação da Matriz de Confusão
+
+# Construção da matriz de confusão a partir dos dados de teste e as previsões realizadas pelo modelo de ML
+cm_modelo_2 <- confusionMatrix(table(data = previsao_teste_2, reference = test_target), positive = "1")
+# cm_modelo_2
+
+# ========================================================================================================
+# --------------------------------------------------------------------------------------------------------
+# Avaliando a performance do modelo logistio com todas as variáveis explanatórias - Modelo 1
+
+# Modelo de regressão logística 2
+
+# Previsões do modelo de regressão logística 1
+previsao_teste_modelo_2 <- predict(modelo_ML_logistic_2, test_data, type = 'response')
+# previsao_teste_modelo_2 <- round(previsao_teste_modelo_2)
+
+# Dataframe - previsão do modelo 2
+# dataframe_previsao_modelo_2 <- data.frame(previsao_teste_modelo_2, test_target)
+# colnames(dataframe_previsao_modelo_2) <- c('Previsão Nova','Target')
+# View(dataframe_previsao_modelo_2)
+
+# Repare na diferença entre a função predict e a função prediction
+previsoes_finais_modelo_2 <- prediction(previsao_teste_modelo_2, test_target)
+
+# Função que podemos usar para plot da curva ROC 
+plot.roc.curve <- function(predictions, title.text){
+  perf <- performance(predictions, "tpr", "fpr")
+  plot(perf,col = "black",lty = 1, lwd = 2,
+       main = title.text, cex.main = 0.6, cex.lab = 0.8,xaxs = "i", yaxs = "i")
+  abline(0,1, col = "red")
+  auc <- performance(predictions,"auc")
+  auc <- unlist(slot(auc, "y.values"))
+  auc <- round(auc,2)
+  legend(0.4,0.4,legend = c(paste0("AUC: ",auc)), cex = 0.6, bty = "n", box.col = "white")
+}
+
+# Plot - quantidade de gráficos na paleta gráfica do R
+plot.roc.curve(previsoes_finais_modelo_2, title.text = "Curva ROC (Modelo 2)")
