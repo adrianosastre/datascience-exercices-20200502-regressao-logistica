@@ -1,3 +1,6 @@
+```{r}
+
+
 # ===============================================================================================
 # Curso: Introdução à Ciência de Dados e Decisões 
 
@@ -14,8 +17,8 @@
 
 
 # Colocando o caminho do diretório
-caminho = ''
-setwd(caminho)
+
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 getwd()
 list.files()
 
@@ -327,3 +330,5 @@ plot.roc.curve <- function(predictions, title.text){
 
 # Plot - quantidade de gráficos na paleta gráfica do R
 plot.roc.curve(previsoes_finais_modelo_2, title.text = "Curva ROC (Modelo 2)")
+
+```
